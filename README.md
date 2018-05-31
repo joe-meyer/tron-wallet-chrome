@@ -24,3 +24,8 @@ You can get it from [Google Chrome Web Store | Tron Wallet for Chrome](https://c
 * Nice animations and transitions.
 
 
+## Tech
+* This app is built with React.js and Material-UI.
+* The app is using [TronScan API](https://api.tronscan.org). However, sometimes, the API is not very reliable 😅. 
+
+
