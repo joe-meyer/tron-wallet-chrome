@@ -60,9 +60,9 @@ function Transition(props) {
 class App extends Component {
   state = {
     // privateKey: 'D90094CD8F340507AB4CBA776987C200B74753CC0A8C4565E952D15937FDCAAF',
-    // address: 'TQ7DWREEZPyUiThCxevy9Yi7CH5JbYDenF',
+    // address: '27dDX3jYc1XziQdwSHWaFDTZqzCYv9S8c55',
     // privateKey: 'B5FB09CBDBAC9FD98FD949BF99441CF18AFE190CEF36591C7CD6B60EA92DA47A',
-    // address: 'THaEqD5PyLnsb3o4aam6HKm4HZtmmn6MJm',
+    // address: '27WgYNXPmRUp7HE3HuSQNMEco5VNPHih5Gg',
     // privateKey: '40A796E25790B4C10AB5BD654AA55442FE702FD4481413E3D5FF66E79C82D270',
     // address: '27VGeMk1tY1LUT3PKPucU3Ef3ipg6PUnBwd',
     // privateKey: '5B3EB449FE41517FDEDA32B2AAA3CF4CF391C80C8DA0151643CCF03B7190614A',
@@ -148,6 +148,13 @@ class App extends Component {
     if (this.state.address) {
       const account = await client.getAccountBalances(this.state.address);
       this.setState({ account });
+    }
+  }
+
+  async loadAccountVotes() {
+    if (this.state.address) {
+      const data = await client.getAccountVotes(this.state.address);
+      this.setState({ votes: data.votes });
     }
   }
 
@@ -925,14 +932,18 @@ renderVotesCard() {
         </TableHead>
         <TableBody>
           {witnesses.map((account, index) => {
+            let url = account.url;
+            if (url.length > 24) {
+              url = url.substr(0, 50) + '...';
+            }
             return (
               <TableRow key={account.address}>
                 <TableCell className="super-representative-number" component="th" scope="row">
                   {index+1}
                 </TableCell>
                 <TableCell className="super-representative-name">
-                  {account.address.substr(0, 24)}...<br/>
-                  <small>{account.url}</small>
+                  {account.address.substr(0, 50)}...<br/>
+                  <small>{url}</small>
                 </TableCell>
                 <TableCell className="super-representative-votes" numeric>{account.votes}</TableCell>
                 <TableCell className="super-representative-your-vote" numeric>
@@ -1101,6 +1112,7 @@ renderVotesCard() {
         address
       }, () => {
         this.loadAccount();
+        this.loadAccountVotes();
         this.loadTransactions();
       });
     }
