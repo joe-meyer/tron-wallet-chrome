@@ -14,6 +14,8 @@ import AttachMoney from '@material-ui/icons/AttachMoney';
 import Launch from '@material-ui/icons/Launch';
 import VpnKey from '@material-ui/icons/VpnKey';
 import Lock from '@material-ui/icons/Lock';
+import AddCircle from '@material-ui/icons/AddCircle';
+import MonetizationOn from '@material-ui/icons/MonetizationOn';
 import CheckCircle from '@material-ui/icons/CheckCircle';
 import LockOpen from '@material-ui/icons/LockOpen';
 import Button from '@material-ui/core/Button';
@@ -38,37 +40,32 @@ import xhr from "axios";
 import moment from 'moment';
 import {find, filter, sumBy, omit} from "lodash";
 import Countdown from 'react-countdown-now';
+import "react-datetime/css/react-datetime.css";
+import DateTimePicker from 'react-datetime';
 import {BigNumber} from 'bignumber.js';
 import Lockr from "lockr";
 import CryptoJS from 'crypto-js';
 import AES from 'crypto-js/aes';
-import {Client} from "@tronscan/client";
-import {isAddressValid} from "@tronscan/client/src/utils/crypto";
-import {generateAccount} from "@tronscan/client/src/utils/account";
-import {pkToAddress} from "@tronscan/client/src/utils/crypto";
+import {Client} from '@tronscan/client';
+import {isAddressValid} from '@tronscan/client/src/utils/crypto';
+import {generateAccount} from '@tronscan/client/src/utils/account';
+import {pkToAddress} from '@tronscan/client/src/utils/crypto';
 import logo from './images/tron-logo.svg';
 import TronLogo from "./images/trans_tron_logo.png";
 import './App.css';
 
 const ONE_TRX = 1000000;
+const CREATE_TOKEN_COST = 1024;
 const client = new Client();
 
 function Transition(props) {
   return <Slide direction="up" {...props} />;
 }
 
+const defaultTokenCreate = { totalSupply: 100000, trxAmount: 1, tokenAmount: 1, website: 'http://', frozenAmount: 0, frozenDays: 0 };
+
 class App extends Component {
   state = {
-    // privateKey: 'D90094CD8F340507AB4CBA776987C200B74753CC0A8C4565E952D15937FDCAAF',
-    // address: '27dDX3jYc1XziQdwSHWaFDTZqzCYv9S8c55',
-    // privateKey: 'B5FB09CBDBAC9FD98FD949BF99441CF18AFE190CEF36591C7CD6B60EA92DA47A',
-    // address: '27WgYNXPmRUp7HE3HuSQNMEco5VNPHih5Gg',
-    // privateKey: '40A796E25790B4C10AB5BD654AA55442FE702FD4481413E3D5FF66E79C82D270',
-    // address: '27VGeMk1tY1LUT3PKPucU3Ef3ipg6PUnBwd',
-    // privateKey: '5B3EB449FE41517FDEDA32B2AAA3CF4CF391C80C8DA0151643CCF03B7190614A',
-    // address: '27mpP2qL4rKDBRq8bYx6vbf4kvdFsmzL9hW',
-    // privateKey: '405624A1A9FACB8D3F85BB2AEB676B89BDE13F0620F7F21A39B0AF685FA8F5DA',
-    // address: '27SoWsjnJdKvQKsuLMEvkQcapCxEMKW23vb',
     account: null,
     accountDetailsOpen: false, 
     receiveOpen: false,
@@ -76,12 +73,17 @@ class App extends Component {
     freezeOpen: false,
     unfreezeOpen: false,
     votesOpen: false,
+    tokenCreateOpen: false,
+    tokenParticipateOpen: false,
     snackbarOpen: false,
     isLoading: false,
     votes: {},
     voteSearchTerm: '',
     backupPrivateKeyOpen: false,
     showPrivateKey: false,
+    tokenCreate: defaultTokenCreate,
+    issuedToken: null,
+    buyingTokens: {}
   };
 
   clear = () => {
@@ -95,6 +97,8 @@ class App extends Component {
       freezeOpen: false,
       unfreezeOpen: false,
       votesOpen: false,
+      tokenCreateOpen: false,
+      tokenParticipateOpen: false,
       snackbarOpen: false,
       isLoading: false,
       votes: {},
@@ -102,33 +106,20 @@ class App extends Component {
       backupPrivateKeyOpen: false,
       showPrivateKey: false,
       transactions: undefined,
-      signInPrivateKey: ''
+      signInPrivateKey: '',
+      tokenCreate: defaultTokenCreate,
+      issuedToken: null,
+      buyingTokens: {}
     });
     Lockr.rm('k');
-  }
-
-  async testAPI() {
-    const address = this.state.address;
-    const pk = this.state.privateKey;
-    
-    const account = await client.getAccountBalances(address);
-    console.log(account);
-
-    const sendResult = await client.send('TRX', address, '27dDX3jYc1XziQdwSHWaFDTZqzCYv9S8c55', ONE_TRX)(pk);
-    console.log(sendResult);
-
-    const freezeResult = await client.freezeBalance(address, 100 * ONE_TRX, 3)(pk);
-    console.log(freezeResult);
-
-    const votes = {'27iUwgZHRZAW5q3unncJVEA2uoY9nWMid52': 88}
-    const voteResult = await client.voteForWitnesses(address, votes)(pk);
-    console.log(voteResult);
   }
 
   componentDidMount() {
     this.retrievKey();
     this.loadPrice();
     this.loadWitnesses();
+    this.loadTokenCreate();
+    this.loadTokens();
   }
 
   componentDidUpdate() {
@@ -176,6 +167,18 @@ class App extends Component {
     }
   }
 
+  async loadTokens() {
+    const limit = this.state.tokensTotal ? this.state.tokensTotal : 100;
+    const {tokens, total} = await client.getTokens({
+      sort: '-name',
+      status: 'ico',
+      limit,
+      start: 0
+    });
+    console.log(tokens);
+    console.log(total);
+    this.setState({ tokens, tokensTotal: total });
+  }
   
   showAccountDetails = () => {
     this.setState({ accountDetailsOpen: true });
@@ -350,6 +353,12 @@ class App extends Component {
     });
   };
 
+  handleCheckboxChange = name => event => {
+    this.setState({
+      [name]: event.target.checked,
+    });
+  };
+
   setSendAmount = (amount) => {
     const sendAmount = amount.replace(/^0+(?!\.|$)/, '').replace(/[^0-9 .]+/g,'').replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1");
 
@@ -404,14 +413,18 @@ class App extends Component {
         sendTo: '',
         sendAmount: '',
       }, () => {
+        this.loadAccount();
         this.loadTransactions();
         setTimeout(()=> {
+          this.loadAccount();
           this.loadTransactions();
         }, 1000)
         setTimeout(()=> {
+          this.loadAccount();
           this.loadTransactions();
         }, 5000)
         setTimeout(()=> {
+          this.loadAccount();
           this.loadTransactions();
         }, 10000)
       });
@@ -682,7 +695,7 @@ class App extends Component {
               control={
                 <Checkbox
                   checked={this.state.freezeConfirm}
-                  onChange={this.handleChange('freezeConfirm')}
+                  onChange={this.handleCheckboxChange('freezeConfirm')}
                   value="freezeConfirm"
                   color="primary"
                 />
@@ -890,7 +903,7 @@ renderVotesCard() {
     const votesSpend = sumBy(Object.values(votes), vote => parseInt(vote, 10) || 0);
     const votesExceptCurrent = omit(votes, [address])
     const actualRemainingVotes = sumBy(Object.values(votesExceptCurrent), vote => parseInt(vote, 10) || 0);
-    if(votesSpend > frozenBalance) {
+    if (votesSpend > frozenBalance) {
       votes[address] = frozenBalance - actualRemainingVotes;
       remainingVotes = 0;
     } else {
@@ -1114,6 +1127,7 @@ renderVotesCard() {
         this.loadAccount();
         this.loadAccountVotes();
         this.loadTransactions();
+        this.loadIssuedToken();
       });
     }
   };
@@ -1180,7 +1194,6 @@ renderVotesCard() {
           open={this.state.backupPrivateKeyOpen}
           TransitionComponent={Transition}
           keepMounted
-          onClose={this.handleBackupPrivateKeyClose}
           aria-labelledby="alert-dialog-slide-title"
           aria-describedby="alert-dialog-slide-description" >
         <DialogTitle id="alert-dialog-slide-title">
@@ -1188,14 +1201,15 @@ renderVotesCard() {
         </DialogTitle>
         <DialogContent>
           <DialogContentText id="alert-dialog-slide-description">
-            Please write down your private key, we can't restore your private key.
-            <br/><br/>
+            <span className="private-key-warrning">Please write down your private key, we can't restore your private key.</span>
+            <br/>
+            <br/>
             <span className="private-key">{this.state.privateKey}</span>
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={this.handleBackupPrivateKeyClose} color="primary">
-            OK
+            I have written down the private key
           </Button>
         </DialogActions>
       </Dialog>
@@ -1272,40 +1286,562 @@ renderVotesCard() {
     )
   }
 
+  handleTokenCreateChange = name => event => {
+    let tokenCreate = this.state.tokenCreate;
+    tokenCreate[name] = event.target.value;
+    this.setState({
+      tokenCreate
+    });
+  };
+
+  handleTokenCreateStartDateChange = datetime => {
+    let tokenCreate = this.state.tokenCreate;
+    tokenCreate.startTime = datetime;
+    this.setState({
+      tokenCreate
+    });
+  };
+
+  handleTokenCreateEndDateChange = datetime => {
+    let tokenCreate = this.state.tokenCreate;
+    tokenCreate.endTime = datetime;
+    this.setState({
+      tokenCreate
+    });
+  };
+
+  showTokenCreate = () => {
+    this.setState({ tokenCreateOpen: true });
+  };
+
+  handleTokenCreateClose = () => {
+    this.setState({ tokenCreateOpen: false });
+  };
+
+  loadTokenCreate = async () => {
+    this.setTokenOnSaleTime();
+    this.loadIssuedToken();
+  };
+
+  loadIssuedToken = async () => {
+    const { address } = this.state;
+    if (address) {
+      const token = await client.getIssuedAsset(address);
+      console.log(token);
+      if (token.token) {
+        this.setState({
+          issuedToken: token,
+        });
+      }
+    }
+  };
+
+  setTokenOnSaleTime = async () => {
+    const block = await client.getLatestBlock();
+    const startTime = moment(block.timestamp).add(1, 'days').toDate();
+    const minimumTime = moment(block.timestamp).add(1, 'hours').toDate();
+    let endTime = new Date();
+    endTime.setHours(0, 0, 0, 0);
+    endTime.setDate(startTime.getDate() + 90);
+
+    const {tokenCreate} = this.state;
+    tokenCreate.startTime = startTime;
+    tokenCreate.endTime = endTime;
+    tokenCreate.minimumTime = minimumTime;
+    
+    this.setState({
+      tokenCreate
+    });
+  };
+
+  isValidStartTime = (datetime) => {
+    let date = this.state.tokenCreate.minimumTime;
+    date.setHours(0, 0, 0, 0);
+    return datetime.isSameOrAfter(date);
+  };
+
+  isValidEndTime = (datetime) => {
+    return this.state.tokenCreate.startTime && datetime.isAfter(this.state.tokenCreate.startTime);
+  };
+
+  isCreateTokenValid() {
+    const { tokenCreate } = this.state;
+    let error;
+
+    if (!tokenCreate.tokenName || tokenCreate.tokenName.length === 0) {
+      error = 'Must have a token name!';
+    } else if (tokenCreate.tokenName.length > 32) {
+      error = 'Token name can not be longer then 32 characters!';
+    } else if (!/^[a-zA-Z]+$/i.test(tokenCreate.tokenName)) {
+      error = 'Token name can only contain a-Z characters';
+    }
+
+    if (!tokenCreate.tokenAbbreviation || tokenCreate.tokenAbbreviation.length === 0) {
+      error = 'Must have a token abbreviation';
+    } else if (tokenCreate.tokenAbbreviation.length > 5) {
+      error = 'Token abbreviation can not be longer then 5 characters';
+    } else if (!/^[a-zA-Z]+$/i.test(tokenCreate.tokenAbbreviation)) {
+      error = 'Token abbreviation can only contain a-Z characters';
+    }
+
+    if (!tokenCreate.description || tokenCreate.description.length === 0) {
+      error = 'Must have a token description';
+    } else if (tokenCreate.description.length > 200) {
+      error = 'Token description can not be longer then 200 characters';
+    }
+
+    if (tokenCreate.totalSupply <= 0) {
+      error = 'Total supply must be a positive number';
+    }
+
+    if (tokenCreate.website.length === 0) {
+      error = 'Must have website URL';
+    }
+
+    if (tokenCreate.trxAmount <= 0) {
+      error = 'TRX amount must be a positive number';
+    }
+
+    if (tokenCreate.tokenAmount <= 0) {
+      error = 'Token amount must be a positive number';
+    }
+
+    if (new Date(tokenCreate.startTime).getTime() < Date.now()) {
+      error = 'Start time can not be in the past';
+    }
+
+    if (error) {
+      this.setState({
+        snackbarOpen: true,
+        snackbarMessage: error
+      });
+
+      return false;
+    }
+
+    return true;
+  }
+
+  createToken = async () => {
+    const { tokenCreate, address, privateKey } = this.state;
+    if (!this.isCreateTokenValid()) {
+      return;
+    }
+
+    this.setState({ isLoading: true });
+    
+    const createTokenResult = await client.createToken({
+      address,
+      name: tokenCreate.tokenName.trim(),
+      shortName: tokenCreate.tokenAbbreviation.trim(),
+      totalSupply: tokenCreate.totalSupply,
+      num: tokenCreate.tokenAmount,
+      trxNum: tokenCreate.trxAmount * ONE_TRX,
+      startTime: tokenCreate.startTime,
+      endTime: tokenCreate.endTime,
+      description: tokenCreate.description,
+      url: tokenCreate.website,
+      frozenSupply: filter(tokenCreate.frozenSupply, fs => fs.amount > 0),
+    })(privateKey);
+    console.log(createTokenResult);
+    if (createTokenResult.success) {
+      this.setState({
+        isLoading: false,
+        snackbarOpen: true,
+        snackbarMessage: 'Succesfully create token!',
+        tokenCreate: defaultTokenCreate,
+        tokenCreateOpen: false,
+      }, () => {
+        this.loadAccount();
+        this.loadTokenCreate();
+        this.loadTransactions();
+        setTimeout(()=> {
+          this.loadAccount();
+          this.loadTokenCreate();
+          this.loadTransactions();
+        }, 1000)
+        setTimeout(()=> {
+          this.loadAccount();
+          this.loadTokenCreate();
+          this.loadTransactions();
+        }, 5000)
+        setTimeout(()=> {
+          this.loadAccount();
+          this.loadTokenCreate();
+          this.loadTransactions();
+        }, 10000)
+      });
+    } else {
+      this.setState({
+        isLoading: false,
+        snackbarOpen: true,
+        snackbarMessage: `Create token failed, ${createTokenResult.message}, please retry later.`,
+      });
+    }
+  };
+
+  renderTokenCreateCard() {
+    const tokenBalance = Math.round(this.state.account.balances[0].balance);
+    const enoughTrx = (tokenBalance >= CREATE_TOKEN_COST);
+    const { tokenCreate } = this.state;
+    return (
+      <div>
+        <h3 className="issue-token-title">Issue a new Token</h3>
+        { !enoughTrx && <p className="not-enough-trx-message">You don't have enough TRX to create token. You need to have at least {CREATE_TOKEN_COST} TRX to create token.</p> }
+        { enoughTrx && <div className="create-token-container">
+        <TextField
+          required
+          label="Token name"
+          value={tokenCreate.tokenName}
+          onChange={this.handleTokenCreateChange('tokenName') }
+          margin="normal" />
+        <TextField
+          required
+          label="Token abbreviation"
+          value={tokenCreate.tokenAbbreviation}
+          onChange={this.handleTokenCreateChange('tokenAbbreviation') }
+          margin="normal" />
+        <TextField
+          required
+          label="Total supply"
+          value={tokenCreate.totalSupply}
+          onChange={this.handleTokenCreateChange('totalSupply') }
+          margin="normal" 
+          type="number"
+          />
+        <TextField
+          required
+          label="Description"
+          value={tokenCreate.description}
+          onChange={this.handleTokenCreateChange('description') }
+          margin="normal" 
+          />  
+        <TextField
+          required
+          label="Website"
+          value={tokenCreate.website}
+          onChange={this.handleTokenCreateChange('website') }
+          margin="normal" 
+          />
+        <h4>Token price</h4>
+        <TextField
+          required
+          label="TRX amount"
+          value={tokenCreate.trxAmount}
+          onChange={this.handleTokenCreateChange('trxAmount') }
+          margin="normal" 
+          type="number"
+          />
+        <TextField
+          required
+          label="Token amount"
+          value={tokenCreate.tokenAmount}
+          onChange={this.handleTokenCreateChange('tokenAmount') }
+          margin="normal" 
+          type="number"
+          />   
+        <p className="token-price-description">Participants will receive {tokenCreate.tokenAmount / tokenCreate.trxAmount} {tokenCreate.tokenName} Token for every 1 TRX.</p>
+        <p className="token-price-description">Token price: 1 Token = {tokenCreate.trxAmount / tokenCreate.tokenAmount} TRX.</p>
+        <h4>Frozen Supply</h4>
+        <p className="token-price-description">You can freeze a part of supply for {tokenCreate.tokenName} token. You can specify the amount to be frozen for a minimum of 1 day. You can manually unfreeze after start date + frozen days has been reached. Freezing supply is optional.</p>
+        <TextField
+          label="Frozen amount"
+          value={this.state.tokenCreate.frozenAmount}
+          onChange={this.handleTokenCreateChange('frozenAmount') }
+          margin="normal" 
+          type="number"
+          />
+        <TextField
+          label="Frozen days"
+          value={this.state.tokenCreate.frozenDays}
+          onChange={this.handleTokenCreateChange('frozenDays') }
+          margin="normal" 
+          type="number"
+          />
+        <h4>Participation period </h4>
+          <div>
+            <h5>Start date</h5>
+            <DateTimePicker
+              onChange={(data) => this.handleTokenCreateStartDateChange(data.toDate()) }
+              isValidDate={this.isValidStartTime}
+              value={this.state.tokenCreate.startTime}
+              input={false}/>
+          </div>
+          <div>
+            <h5>End date</h5>
+            <DateTimePicker
+              onChange={(data) => this.handleTokenCreateEndDateChange(data.toDate()) }
+              isValidDate={this.isValidEndTime}
+              value={this.state.tokenCreate.endTime}
+              input={false}/>
+          </div>  
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={this.state.createTokenConfirm}
+              onChange={this.handleCheckboxChange('createTokenConfirm')}
+              value="createTokenConfirm"
+              color="primary"
+            />
+          }
+          label="I confirm to use 1024 TRX to create the new token"
+          disabled={this.state.isLoading}
+        />
+        <Button 
+          id="freeze-token-button"
+          className="send-token-button" 
+          variant="raised" 
+          color="primary" 
+          disabled={!this.state.createTokenConfirm || this.state.isLoading}
+          onClick={this.createToken}>
+          Create Token <AddCircle className="send-button-icon"/>
+        </Button>
+        </div>
+        }
+      </div>
+    )
+  }
+
+  renderTokenCreate() {
+    if (!this.state.account) {
+      return null;
+    }
+    const { issuedToken } = this.state;
+
+    return (
+      <Dialog
+          fullScreen
+          open={this.state.tokenCreateOpen}
+          onClose={this.handleTokenCreateClose}
+          TransitionComponent={Transition} >
+          <AppBar position="static" className="appBar">
+            <Toolbar>
+              <Tooltip title="Close">
+                <IconButton color="inherit" onClick={this.handleTokenCreateClose} aria-label="Close">
+                  <CloseIcon />
+                </IconButton>
+              </Tooltip>
+              <Typography variant="title" color="inherit">
+                Create Token
+              </Typography>
+            </Toolbar>
+          </AppBar>
+          <div>
+          <Card className="card">
+            { issuedToken && <p>You can only create one token per account!</p>}
+            { !issuedToken && this.renderTokenCreateCard()}
+          </Card>
+        </div>
+      </Dialog>
+    )
+  }
+
+  showTokenParticipate = () => {
+    this.setState({ tokenParticipateOpen: true });
+  };
+
+  handleTokenParticipateClose = () => {
+    this.setState({ tokenParticipateOpen: false });
+  };
+
+  setBuyTokenAmount = (token, amount) => {
+    const { buyingTokens, account } = this.state;
+    const buyingAmount = amount.replace(/^0+(?!\.|$)/, '').replace(/[^0-9 .]+/g,'').replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1");
+    const trx = find(account.balances, token => token.name === "TRX");
+
+    if (buyingAmount * token.price / ONE_TRX < trx.balance) {
+      buyingTokens[token.name] = buyingAmount;
+    } else {
+      buyingTokens[token.name] = trx.balance * ONE_TRX / token.price;
+    }
+
+    this.setState({
+      buyingTokens
+    });
+  };
+
+  buyToken = async (tokenName) => {
+    const { buyingTokens, tokens, privateKey, address } = this.state;
+    const token = tokens.find(t => t.name === tokenName)
+
+    this.setState({ isLoading: true });
+    
+    const participateAssetResult = await client.participateAsset(address, token.ownerAddress, token.name, buyingTokens[tokenName] * token.price)(privateKey);
+    if (participateAssetResult.success) {
+      buyingTokens[tokenName] = 0;
+      this.setState({
+        isLoading: false,
+        snackbarOpen: true,
+        snackbarMessage: 'Succesfully buy token!',
+        buyingTokens
+      }, () => {
+        this.loadAccount();
+        this.loadTransactions();
+        this.loadTokens();
+        setTimeout(()=> {
+          this.loadAccount();
+          this.loadTransactions();
+          this.loadTokens();
+        }, 1000)
+        setTimeout(()=> {
+          this.loadAccount();
+          this.loadTransactions();
+          this.loadTokens();
+        }, 5000)
+        setTimeout(()=> {
+          this.loadAccount();
+          this.loadTransactions();
+          this.loadTokens();
+        }, 10000)
+      });
+    } else {
+      this.setState({
+        isLoading: false,
+        snackbarOpen: true,
+        snackbarMessage: `Buy token failed, ${participateAssetResult.message}, please retry later.`,
+      });
+    }
+  };
+
+  isBuyTokenButtonValid = (tokenName) => {
+    const { buyingTokens } = this.state;
+    return buyingTokens[tokenName] && buyingTokens[tokenName] > 0;
+  };
+
+  getBuyingTokenButtonText = (token) => {
+    const { buyingTokens } = this.state;
+
+    if (buyingTokens[token.name] && buyingTokens[token.name] > 0) {
+      const trxAmount = Number(buyingTokens[token.name] * (token.price / ONE_TRX)).toFixed(3) * 1;
+      return `Cost ${trxAmount} TRX to buy`;
+    } else {
+      return 'Input positive amount to buy';
+    }
+  }
+
+  renderTokenParticipate() {
+    if (!this.state.tokens) {
+      return null;
+    }
+
+    const now = new Date().getTime();
+    const tokens = this.state.tokens.filter( token => token.startTime < now && token.endTime > now && token.percentage < 100 );
+    const { buyingTokens } = this.state;
+
+    return (
+      <Dialog
+          fullScreen
+          open={this.state.tokenParticipateOpen}
+          onClose={this.handleTokenParticipateClose}
+          TransitionComponent={Transition} >
+          <AppBar position="sticky" className="appBar">
+            <Toolbar>
+              <Tooltip title="Close">
+                <IconButton color="inherit" onClick={this.handleTokenParticipateClose} aria-label="Close">
+                  <CloseIcon />
+                </IconButton>
+              </Tooltip>
+              <Typography variant="title" color="inherit">
+                Buy Token
+              </Typography>
+            </Toolbar>
+          </AppBar>
+          <div className="buy-token-container">
+          {
+          tokens.map((token, index) => (
+            <Card key={index + "-" + token.name} className="card buy-token-card">
+              <h3>{token.name}</h3>
+              <div className="buy-token-desription">{token.description}</div>
+              <div className="progress-desription">
+                <div>Sold: <span className="progress-sold">{token.issued}</span> / Total: <span className="progress-total">{token.availableSupply}</span></div>
+                <div className="progress-sold">{Math.ceil(token.issuedPercentage)}% </div>
+              </div>
+              <div className="progress">
+                <div className="progress-bar" style={{width: token.issuedPercentage + '%'}}/>
+              </div>
+              <div className="progress-ends">
+                ends in {moment(token.endTime).diff(moment(), 'days')} days
+              </div>
+              <div className="buy-rate">1 TRX = {ONE_TRX / token.price} {token.name}.</div>
+              <div className="buy-message">How much tokens do you want to buy?</div>
+              <TextField
+                  required
+                  label="Amount"
+                  className="buy-amount"
+                  value={buyingTokens[token.name]}
+                  onChange={(ev) => this.setBuyTokenAmount(token, ev.target.value) }
+                  margin="normal" 
+                  type="number"
+                  placeholder="0"
+                  disabled={this.state.isLoading} />
+              <Button variant="outlined" className="buy-button" color="primary"
+                  onClick={() => this.buyToken(token.name)}
+                  disabled={!this.isBuyTokenButtonValid(token.name) || this.state.isLoading}>
+                  {this.getBuyingTokenButtonText(token)}
+              </Button>
+            </Card>
+          ))
+          }
+          
+        </div>
+      </Dialog>
+    )
+  }
+
   renderTokensTable() {
-    const { account } = this.state;
+    const { account, tokenCreate } = this.state;
     if (!account || account.balances.length < 2) {
       return (
-        <p>No tokens found!</p>
+        <div>
+          <p>No tokens found!</p>
+          <div className="token-buttons no-token">
+            <Button variant="outlined" onClick={this.showTokenCreate}
+             disabled={!tokenCreate.startTime}>
+              Create <AddCircle className="account-details-button-icon"/>
+            </Button>
+            <Button variant="outlined" onClick={this.showTokenParticipate}>
+            Buy <MonetizationOn className="account-details-button-icon"/>
+            </Button>
+          </div>
+        </div>
       );
     }
     
     return (
-      <div>
-      <Table className="tokens-table">
-        <TableHead>
-          <TableRow>
-            <TableCell className="tokens-name">Token</TableCell>
-            <TableCell className="tokens-amount" numeric>Amount</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {account.balances.map((token, index) => {
-            return (
-              (index > 0) &&
-              <TableRow key={index}>
-                <TableCell className="tokens-name">{token.name}</TableCell>
-                <TableCell className="tokens-amount" numeric>{token.balance}</TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-      <div className="view-transactions-on-tronscan-button">
-        <Button size="small" color="primary" onClick={this.goToTronscanTokens}>
-          View tokens on tronscan
-        </Button>
-      </div>
+      <div className="tokens-table-container">
+        <Table className="tokens-table">
+          <TableHead>
+            <TableRow>
+              <TableCell className="tokens-name">Token</TableCell>
+              <TableCell className="tokens-amount" numeric>Amount</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {account.balances.map((token, index) => {
+              return (
+                (index > 0) &&
+                <TableRow key={index}>
+                  <TableCell className="tokens-name">{token.name}</TableCell>
+                  <TableCell className="tokens-amount" numeric>{token.balance}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        <div className="token-buttons">
+          <Button variant="outlined" onClick={this.showTokenCreate}
+             disabled={!tokenCreate.startTime}>
+            Create <AddCircle className="account-details-button-icon"/>
+          </Button>
+          <Button variant="outlined" onClick={this.showTokenParticipate}>
+          Buy <MonetizationOn className="account-details-button-icon"/>
+          </Button>
+        </div>
+        <div className="view-transactions-on-tronscan-button">
+          <Button size="small" color="primary" onClick={this.goToTronscanTokens}>
+            View tokens on tronscan
+          </Button>  
+        </div>
       </div>
     )
   }
@@ -1331,10 +1867,10 @@ renderVotesCard() {
       <div className="cards">
         {this.renderTron()}
         {this.renderSendReceiveButtons()}
-        {this.renderTronPower()}
-        {this.renderVotesCard()}
         {this.renderTransactions()}
         {this.renderTokens()}
+        {this.renderTronPower()}
+        {this.renderVotesCard()}
 
         {this.renderAccountDetails()}
         {this.renderReceive()}
@@ -1343,6 +1879,8 @@ renderVotesCard() {
         {this.renderUnfreeze()}
         {this.renderVotes()}
         {this.renderBackupPrivateKey()}
+        {this.renderTokenCreate()}
+        {this.renderTokenParticipate()}
         {this.renderSnackbar()}
       </div>
     )
@@ -1362,7 +1900,7 @@ renderVotesCard() {
 
   renderAppBar() {
     return (
-      <AppBar position="static">
+      <AppBar position="sticky">
         <Toolbar>
           <div className="tool-bar">
             <div className="logo-container">
