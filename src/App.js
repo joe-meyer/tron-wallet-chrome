@@ -43,9 +43,6 @@ import Countdown from 'react-countdown-now';
 import "react-datetime/css/react-datetime.css";
 import DateTimePicker from 'react-datetime';
 import {BigNumber} from 'bignumber.js';
-import Lockr from "lockr";
-import CryptoJS from 'crypto-js';
-import AES from 'crypto-js/aes';
 import {Client} from '@tronscan/client';
 import {isAddressValid} from '@tronscan/client/src/utils/crypto';
 import {generateAccount} from '@tronscan/client/src/utils/account';
@@ -111,11 +108,9 @@ class App extends Component {
       issuedToken: null,
       buyingTokens: {}
     });
-    Lockr.rm('k');
   }
 
   componentDidMount() {
-    this.retrievKey();
     this.loadPrice();
     this.loadWitnesses();
     this.loadTokenCreate();
@@ -175,8 +170,6 @@ class App extends Component {
       limit,
       start: 0
     });
-    console.log(tokens);
-    console.log(total);
     this.setState({ tokens, tokensTotal: total });
   }
   
@@ -1075,8 +1068,7 @@ renderVotesCard() {
       privateKey: account.privateKey,
       backupPrivateKeyOpen: true,
     }, () => {
-      this.storeKey(account.privateKey);
-      this.retrievKey();
+      this.prepareKey(account.privateKey);
     }); 
   };
 
@@ -1106,30 +1098,18 @@ renderVotesCard() {
     return false;
   }
     
-  storeKey = (key) => {
-    const hash = '191fb780892a2b47b94ec86ff88cea123ffe8993c75dc94ed4047affae62c1da';
-    const value = AES.encrypt(key, hash).toString();
-    Lockr.set('k', value);
-  };
+  prepareKey = (key) => {
+    const address = pkToAddress(key);
 
-  retrievKey = () => {
-    const hash = '191fb780892a2b47b94ec86ff88cea123ffe8993c75dc94ed4047affae62c1da';
-    const value = Lockr.get('k');
-    if (value) {
-      const bytes = AES.decrypt(value, hash);
-      const key = bytes.toString(CryptoJS.enc.Utf8);
-      const address = pkToAddress(key);
-  
-      this.setState({ 
-        privateKey: key,
-        address
-      }, () => {
-        this.loadAccount();
-        this.loadAccountVotes();
-        this.loadTransactions();
-        this.loadIssuedToken();
-      });
-    }
+    this.setState({
+      privateKey: key,
+      address
+    }, () => {
+      this.loadAccount();
+      this.loadAccountVotes();
+      this.loadTransactions();
+      this.loadIssuedToken();
+    });
   };
 
   signIn = () => {
@@ -1141,8 +1121,7 @@ renderVotesCard() {
       privateKey: signInPrivateKey,
       signInPrivateKey: '',
     }, () => {
-      this.storeKey(signInPrivateKey);
-      this.retrievKey();
+      this.prepareKey(signInPrivateKey);
     });
   };
 
