@@ -673,7 +673,7 @@ class App extends Component {
           </AppBar>
           <div>
           <Card className="card send-card">
-            { (tokenBalance > 0) && <p>You can freeze upto {tokenBalance} TRX.</p> }
+            { (tokenBalance > 0) && <p>You can freeze up to {tokenBalance} TRX.</p> }
             { (tokenBalance <= 0) && <p>You don't have any TRX to freeze.</p> }
             <TextField
               required
